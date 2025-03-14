@@ -1,3 +1,4 @@
+import { match } from 'assert'
 import dotenv from 'dotenv'
 dotenv.config()
 import ModbusRTU from 'modbus-serial'
@@ -32,6 +33,7 @@ mqttClient.on('error', (err) => {
     console.error('MQTT error:', err)
 })
 
+// three numbers (each float is two 16bit registers)
 function RegistersToFloats(registers: number[]): number[] {
     const values: number[] = []
     for (let i = 0; i < registers.length; i += 2) {
@@ -41,6 +43,14 @@ function RegistersToFloats(registers: number[]): number[] {
         values.push(buffer.readFloatBE(0)) // Float 변환 후 배열에 저장
     }
     return values
+}
+
+// single number (one float from two 16bit registers)
+function RegistersToFloat(register: number[]): number {
+    const buffer = Buffer.alloc(4)
+    buffer.writeUInt16BE(register[0], 0)
+    buffer.writeUInt16BE(register[1], 2)
+    return buffer.readFloatBE(0)
 }
 
 async function initModbus() {
@@ -59,11 +69,11 @@ async function initModbus() {
     }
 }
 
-async function saveTodb(data1: number, data2: number, data3: number) {
+async function saveTodb(slaveID: number, data: number) {
     try {
         const query = {
-            text: 'INSERT INTO modbus_data(data1, data2, data3) VALUES($1, $2, $3)',
-            values: [data1, data2, data3],
+            text: 'INSERT INTO rs485(slave_id, data) VALUES($1, $2)',
+            values: [slaveID, data],
         }
         await dbPool.query(query)
         console.log('Data saved to DB')
@@ -73,7 +83,6 @@ async function saveTodb(data1: number, data2: number, data3: number) {
 }
 
 // 어떤 환경센서 데이터를 읽어올지 모름. 일단 기본 구조만 잡기
-
 async function readModbusData() {
     console.log('Reading modbus data...')
     try {
@@ -82,6 +91,18 @@ async function readModbusData() {
             await initModbus()
         }
         const data = await modbusClient.readHoldingRegisters(REGISTER_START, REGISTER_COUNT)
+        const floatData = RegistersToFloat(data.data)
+        console.log('Data: ', floatData)
+
+        const payload = JSON.stringify({
+            data: floatData,
+        })
+
+        mqttClient.publish('v1/devices/me/telemetry', payload, () => {
+            console.log(`Published: ${payload}`)
+        })
+
+        await saveTodb(SLAVE_ID[0], floatData)
     } catch (error) {
         console.error('Error reading modbus data: ', error)
     }
