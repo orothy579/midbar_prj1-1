@@ -6,6 +6,22 @@ import { faker } from '@faker-js/faker'
 const SERIAL_PORT = '/dev/ttyV1'
 const BAUD_RATE = 9600
 
+// 여러 개의 Slave ID를 저장하는 객체
+const SLAVE_IDS = [1, 5, 10] // 예제: 3개의 Slave
+const slaveRegisters: { [id: number]: number[] } = {}
+
+// 각 Slave ID에 대해 초기값 설정
+for (const id of SLAVE_IDS) {
+    slaveRegisters[id] = floatToModbusRegisters(faker.number.float({ max: 100 }))
+}
+
+// 각 Slave의 데이터를 5초마다 갱신
+setInterval(() => {
+    for (const id of SLAVE_IDS) {
+        slaveRegisters[id] = floatToModbusRegisters(faker.number.float({ max: 100 }))
+    }
+}, 5000)
+
 // SerialPort 인스턴스 생성 (Slave 역할)
 const port = new SerialPort({
     path: SERIAL_PORT,
@@ -13,11 +29,9 @@ const port = new SerialPort({
 })
 
 function floatToModbusRegisters(values: number): number[] {
-    // Float data개수 * 4바이트 할당
     const buffer = Buffer.alloc(4)
     buffer.writeFloatBE(values, 0)
 
-    // 2바이트씩 읽어서 배열에 추가
     const registers: number[] = []
     for (let i = 0; i < buffer.length; i += 2) {
         registers.push(buffer.readUInt16BE(i))
@@ -25,47 +39,53 @@ function floatToModbusRegisters(values: number): number[] {
 
     return registers
 }
-let holdingRegisters = floatToModbusRegisters(faker.number.float({ max: 100 }))
-
-setInterval(() => {
-    holdingRegisters = floatToModbusRegisters(faker.number.float({ max: 100 }))
-}, 5000)
 
 // Master의 요청을 감지하고 처리
 port.on('data', (data: Buffer) => {
     console.log('Request Received:', data.toString('hex'))
 
     if (data.length >= 8 && data[1] === 3) {
-        const startAddress = data.readUInt16BE(2) // 요청된 시작 주소
-        const quantity = data.readUInt16BE(4) // 요청된 레지스터 개수
-
-        console.log(
-            `Request info : Function: ${data[1]}, Start Address: ${startAddress}, Quantity: ${quantity}`
-        )
-
-        // 응답 패킷 생성
-        const response = Buffer.alloc(3 + quantity * 2) // Slave ID(1) + Function Code(1) + Byte Count(1) + Data(N)
-        response[0] = data[0] // Slave ID
-        response[1] = 0x03 // Function Code
-        response[2] = quantity * 2 // Byte Count (Register 개수 * 2 바이트)
-
-        // 요청된 개수만큼 레지스터 데이터 채우기
-        for (let i = 0; i < quantity; i++) {
-            const registerValue = holdingRegisters[startAddress + i]
-            response.writeUInt16BE(registerValue, 3 + i * 2)
+        const slaveId = data[0] // 요청된 Slave ID
+        if (!(slaveId in slaveRegisters)) {
+            console.log(`Unknown Slave ID: ${slaveId}, ignoring request.`)
+            return
         }
 
-        // CRC
+        const startAddress = data.readUInt16BE(2)
+        const quantity = data.readUInt16BE(4)
+
+        console.log(
+            `Request info: Slave ID: ${slaveId}, Function: ${data[1]}, Start Address: ${startAddress}, Quantity: ${quantity}`
+        )
+
+        // 요청 개수가 레지스터 크기를 초과하면 오류 처리
+        const registers = slaveRegisters[slaveId]
+        if (startAddress + quantity > registers.length) {
+            console.error(`Invalid request: Requested registers exceed available data`)
+            return
+        }
+
+        // 응답 패킷 생성
+        const response = Buffer.alloc(3 + quantity * 2)
+        response[0] = slaveId
+        response[1] = 0x03
+        response[2] = quantity * 2
+
+        for (let i = 0; i < quantity; i++) {
+            response.writeUInt16BE(registers[startAddress + i], 3 + i * 2)
+        }
+
+        // CRC 계산 및 추가
         const crcValue = crc.crc16modbus(response)
         const crcBuffer = Buffer.from([crcValue & 0xff, (crcValue >> 8) & 0xff])
-
         const finalResponse = Buffer.concat([response, crcBuffer])
 
         // Master에게 응답 전송
         port.write(finalResponse, () => {
-            console.log('Response Sent (HEX):', finalResponse.toString('hex'))
+            console.log(`Response Sent (HEX) for Slave ${slaveId}:`, finalResponse.toString('hex'))
         })
     }
 })
 
-console.log(`Modbus started : ${SERIAL_PORT}`)
+console.log(`Modbus started on port: ${SERIAL_PORT}`)
+console.log(`Active Slave IDs: ${SLAVE_IDS}`)

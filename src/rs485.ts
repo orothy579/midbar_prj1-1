@@ -73,6 +73,8 @@ function RegistersToFloat(register: number[]): number {
 async function initModbus(): Promise<void> {
     if (!modbusClient.isOpen) {
         await modbusClient.connectRTUBuffered(SERIAL_PORT, { baudRate: BAUD_RATE })
+        modbusClient.setTimeout(10)
+
         console.log('Modbus connected')
     }
 }
@@ -121,9 +123,15 @@ async function pollSlaves(slaveIDs: number[]) {
 async function start() {
     await initModbus()
     const slaveIDs = await detectSlaves()
-    console.log('Detected IDs: ', slaveIDs)
+    console.log('Detected slave IDs: ', slaveIDs)
 
-    setInterval(() => pollSlaves(slaveIDs), 5000)
+    setInterval(async () => {
+        try {
+            await pollSlaves(slaveIDs)
+        } catch (error) {
+            console.error('Polling error:', error)
+        }
+    }, 3000)
 }
 
 start().catch(console.error)
