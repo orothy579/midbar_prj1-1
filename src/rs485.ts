@@ -8,7 +8,7 @@ const MQTT_BROKER_IP = process.env.MQTT_BROKER_IP || 'localhost'
 const MQTT_URL = `mqtt://${MQTT_BROKER_IP}:1883`
 const ACCESS_TOKEN = process.env.ACCESS_TOKEN
 
-const SERIAL_PORT = '/dev/ttyV0'
+const SERIAL_PORT = '/dev/ttyV3'
 const BAUD_RATE = 9600
 const REGISTER_START = 0
 const REGISTER_COUNT = 2 // 2 * 데이터 개수

@@ -3,11 +3,11 @@ import crc from 'crc'
 import { faker } from '@faker-js/faker'
 
 // 사용할 시리얼 포트
-const SERIAL_PORT = '/dev/ttyV1'
+const SERIAL_PORT = '/dev/ttyV2'
 const BAUD_RATE = 9600
 
 // 여러 개의 Slave ID를 저장하는 객체
-const SLAVE_IDS = [1, 5, 10] // 예제: 3개의 Slave
+const SLAVE_IDS = [1, 5, 10, 12] // 예제: 3개의 Slave
 const slaveRegisters: { [id: number]: number[] } = {}
 
 // 각 Slave ID에 대해 초기값 설정
