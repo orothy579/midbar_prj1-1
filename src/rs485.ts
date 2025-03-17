@@ -1,4 +1,5 @@
 import dotenv from 'dotenv'
+import { setMaxIdleHTTPParsers } from 'http'
 dotenv.config()
 import ModbusRTU from 'modbus-serial'
 import mqtt from 'mqtt'
@@ -92,6 +93,20 @@ async function detectSlaves(): Promise<number[]> {
     return Ids
 }
 
+async function detectSlavesUntilFound(): Promise<number[]> {
+    var sleep = require('sleep')
+    while (true) {
+        const foundIDs = await detectSlaves()
+
+        if (foundIDs.length > 0) {
+            return foundIDs
+        } else {
+            console.log('No slaves found ... retrying in 5 seconds')
+            await sleep.msleep(5000)
+        }
+    }
+}
+
 // 어떤 환경센서 데이터를 읽어올지 모름. 일단 기본 구조만 잡기
 async function pollSlaves(slaveIDs: number[]) {
     // Read data
@@ -122,7 +137,7 @@ async function pollSlaves(slaveIDs: number[]) {
 
 async function start() {
     await initModbus()
-    const slaveIDs = await detectSlaves()
+    const slaveIDs = await detectSlavesUntilFound()
     console.log('Detected slave IDs: ', slaveIDs)
 
     setInterval(async () => {
